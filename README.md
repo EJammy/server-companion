@@ -1,6 +1,7 @@
 ## Configuration setup
+Simply make a copy of example_config.h and edit the file.
 ```
-mv pico/example_config.h pico/config.h
+cp pico/example_config.h pico/config.h
 ```
 ## Generating keys
 First, generate the key
