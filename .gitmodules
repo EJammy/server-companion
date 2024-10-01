@@ -1,0 +1,3 @@
+[submodule "pico/tiny-HMAC-c"]
+	path = pico/tiny-HMAC-c
+	url = git@github.com:kokke/tiny-HMAC-c.git

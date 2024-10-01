@@ -1,0 +1,12 @@
+.idea
+.vscode
+_deps
+cmake-*
+build
+build-*
+.DS_Store
+*.pdf
+.cache
+
+config.h
+secret_key.bin
