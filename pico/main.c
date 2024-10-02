@@ -114,7 +114,7 @@ void send_WOL() {
     }
     // 6 byte of MAC address, repeated 6 times
     for (; i < WOL_LEN; i += 6) {
-        memcpy(packet + i, WOL_WOL_MAC, 6);
+        memcpy(packet + i, WOL_TARGET_MAC, 6);
     }
     err_t err = udp_sendto(pcb, msg_buf, &target_addr, WOL_PORT);
     hexdump(packet, WOL_LEN);
@@ -187,6 +187,7 @@ int main() {
 
     if (cyw43_arch_init_with_country(CYW43_COUNTRY_USA)) {
         printf("failed to initialise\n");
+        err_fn();
         return 1;
     }
     printf("initialised\n");
@@ -195,6 +196,7 @@ int main() {
 
     if (cyw43_arch_wifi_connect_timeout_ms(ssid, pass, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
         printf("failed to connect\n");
+        err_fn();
         return 1;
     }
     printf("connected\n");
