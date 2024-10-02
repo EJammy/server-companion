@@ -14,7 +14,7 @@ func main() {
 	fmt.Println("Hello world")
 
 	if len(os.Args) > 3 {
-		log.Fatal("Too much argument!")
+		log.Fatal("Too many argument!")
 	}
 	if len(os.Args) < 2 {
 		log.Fatal("No IP address provided!")
@@ -37,29 +37,32 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var result []byte = make([]byte, 12)
-	var byte_read = 0
-	for byte_read <= 0 {
-        h := hmac.New(sha1.New, key)
+	h := hmac.New(sha1.New, key)
+	fmt.Printf("Key length: %v\n", len(key))
+	fmt.Printf("Recommended key length: %v\n", h.BlockSize())
+	packet := h.Sum([]byte{0x01, 0x01})
+	fmt.Printf("Sending packet: %x\n", packet)
+	var i = 0
+	for {
 		_, err = h.Write([]byte("request"))
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("Key length: %v\n", len(key))
-		fmt.Printf("Recommended key length: %v\n", h.BlockSize())
-		packet := h.Sum([]byte{0x01, 0x01})
-		fmt.Printf("Sending packet: %x\n", packet)
+		conn.SetDeadline(time.Now().Add(time.Second * 2))
 		_, err = conn.Write(packet)
 		log.Println("Sent bytes")
 		if err != nil {
 			log.Fatal(err)
 		}
-		// TODO: add timeout
-		byte_read, err = conn.Read(result)
+		var result []byte = make([]byte, 12)
+		_, err = conn.Read(result)
 		if err != nil {
-			log.Println("Read failed, retrying: ", err)
+			log.Printf("Read failed, retrying: i=%v, %v\n", i, err)
+			i++
+		} else {
+			log.Println("Got ", result)
+			break
 		}
-		log.Println("Got ", result)
-		time.Sleep(time.Second)
+		time.Sleep(time.Millisecond*50)
 	}
 }

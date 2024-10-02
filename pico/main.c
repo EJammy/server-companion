@@ -160,7 +160,6 @@ void recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
             printf("Sent challenge\n");
         }
         pbuf_free(response);
-        return;
     }
     if (memcmp(data + 2, hmac_result, HMAC_SHA1_HASH_SIZE) == 0) {
         struct pbuf *response = pbuf_alloc(PBUF_TRANSPORT, 4, PBUF_RAM);
@@ -180,6 +179,7 @@ void recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
         pbuf_free(response);
     } else {
     }
+    pbuf_free(p);
 }
 
 int main() {
