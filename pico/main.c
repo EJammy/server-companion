@@ -9,7 +9,6 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
-// #include <openssl/aes.h>
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
@@ -88,6 +87,7 @@ void hexdump(const void *data, size_t size) {
         printf("\n");
     }
 }
+
 // Error check (assert), don't bother cleaning up
 void check_err(bool ok, char *msg, void *dump_target) {
     if (ok) return;
@@ -97,15 +97,16 @@ void check_err(bool ok, char *msg, void *dump_target) {
 }
 
 struct udp_pcb *pcb;
-struct pbuf *msg_buf;
+struct pbuf *wol_packet;
 
 ip_addr_t target_addr;
 
 #define WOL_LEN (6 + 16*6)
 
-// Sends wake-on-LAN magic packet
-void send_WOL() {
-    char *packet = (char *)msg_buf->payload;
+void init_wol() {
+    wol_packet = pbuf_alloc(PBUF_TRANSPORT, WOL_LEN, PBUF_RAM);
+    check_err(wol_packet != NULL, "Failed to allocate!", NULL);
+    char *packet = (char *)wol_packet->payload;
 
     size_t i = 0;
     // 6 bytes of FF
@@ -116,9 +117,13 @@ void send_WOL() {
     for (; i < WOL_LEN; i += 6) {
         memcpy(packet + i, WOL_TARGET_MAC, 6);
     }
-    err_t err = udp_sendto(pcb, msg_buf, &target_addr, WOL_PORT);
     hexdump(packet, WOL_LEN);
-    printf("%p\n", msg_buf);
+}
+
+// Sends wake-on-LAN magic packet
+void send_WOL() {
+    err_t err = udp_sendto(pcb, wol_packet, &target_addr, WOL_PORT);
+    printf("%p\n", wol_packet);
     if (err != ERR_OK) {
         printf("Failed to send UDP packet! error=%d\n", err);
     } else {
@@ -140,35 +145,24 @@ void recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
     printf("HMAC\n");
     hexdump(hmac_result, 32);
 
-    // uint32_t challenge_num = time_us_32();
-
-    // version number, request type, hmac
+    // version number, request no, hmac
     char *data = p->payload;
-    if (data[0] != 0x01 || data[1] != 0x01) {
-        uint32_t challenge_num = time_us_32();
-        struct pbuf *response = pbuf_alloc(PBUF_TRANSPORT, 4, PBUF_RAM);
-        if (response == NULL) {
-            printf("Failed to allocate!\n");
-            err_fn();
-        }
-        memset(response->payload, 0xff, 4);
-        hexdump(response->payload, 32);
-        err_t err = udp_sendto(pcb, response, addr, port);
-        if (err != ERR_OK) {
-            printf("Failed to send UDP packet! error=%d\n", err);
-        } else {
-            printf("Sent challenge\n");
-        }
-        pbuf_free(response);
+
+    // avoid becoming a dos amplification vector
+    if (p->len < 8) {
+        pbuf_free(p);
+        return;
     }
-    if (memcmp(data + 2, hmac_result, HMAC_SHA1_HASH_SIZE) == 0) {
-        struct pbuf *response = pbuf_alloc(PBUF_TRANSPORT, 4, PBUF_RAM);
-        if (response == NULL) {
-            printf("Failed to allocate!\n");
-            err_fn();
-        }
+    struct pbuf *response = pbuf_alloc(PBUF_TRANSPORT, 4, PBUF_RAM);
+    if (response == NULL) {
+        printf("Failed to allocate!\n");
+        err_fn();
+    }
+    if (data[0] != 0x01) {
+        // Wrong protocal version
+        memset(response->payload, 0xff, 4);
+    } else if (memcmp(data + 2, hmac_result, HMAC_SHA1_HASH_SIZE) == 0) {
         memset(response->payload, 0x01, 4);
-        hexdump(response->payload, 32);
         err_t err = udp_sendto(pcb, response, addr, port);
         if (err != ERR_OK) {
             printf("Failed to send UDP packet! error=%d\n", err);
@@ -176,9 +170,15 @@ void recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
             printf("Sent challenge\n");
         }
         send_WOL();
-        pbuf_free(response);
     } else {
     }
+    err_t err = udp_sendto(pcb, response, addr, port);
+    if (err != ERR_OK) {
+        printf("Failed to send UDP packet! error=%d\n", err);
+    } else {
+        printf("Sent challenge\n");
+    }
+    pbuf_free(response);
     pbuf_free(p);
 }
 
@@ -210,13 +210,6 @@ int main() {
     check_err(err == ERR_OK, "Failed to bind!", NULL);
     udp_recv(pcb, recv_callback, NULL);
 
-    msg_buf = pbuf_alloc(PBUF_TRANSPORT, WOL_LEN, PBUF_RAM);
-    check_err(msg_buf != NULL, "Failed to allocate!", NULL);
-    if (msg_buf == NULL) {
-        printf("Failed to allocate!\n");
-        err_fn();
-    }
-
     while (true) {
         set_status_led(false);
         printf("sleeping %d\n", time_us_32());
@@ -236,6 +229,6 @@ int main() {
 #else
 #endif
     }
-    pbuf_free(msg_buf);
+    pbuf_free(wol_packet);
 }
 
