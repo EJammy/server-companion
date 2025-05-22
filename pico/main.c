@@ -125,13 +125,13 @@ void send_WOL() {
     err_t err = udp_sendto(pcb, wol_packet, &target_addr, WOL_PORT);
     printf("%p\n", wol_packet);
     if (err != ERR_OK) {
-        printf("Failed to send UDP packet! error=%d\n", err);
+        printf("Failed to send WOL packet! error=%d\n", err);
     } else {
         printf("Sent packet\n");
     }
 }
 
-const char req_char[] = "request";
+char req_char[4] = {0x00, 0x00, 0x00, 0x00};
 
 void recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
         const ip_addr_t *addr, u16_t port) {
@@ -139,7 +139,7 @@ void recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
     hexdump(p->payload, 32);
     uint8_t hmac_result[SHA1HashSize];
     // TODO: change req_char
-    hmac_sha1((uint8_t*)mac_key, sizeof(mac_key), (uint8_t*)req_char, sizeof(req_char) - 1, hmac_result);
+    hmac_sha1((uint8_t*)mac_key, sizeof(mac_key), (uint8_t*)req_char, sizeof(req_char), hmac_result);
     printf("key\n");
     hexdump(mac_key, 32);
     printf("HMAC\n");
@@ -161,22 +161,22 @@ void recv_callback(void *arg, struct udp_pcb *pcb, struct pbuf *p,
     if (data[0] != 0x01) {
         // Wrong protocal version
         memset(response->payload, 0xff, 4);
-    } else if (memcmp(data + 2, hmac_result, HMAC_SHA1_HASH_SIZE) == 0) {
-        memset(response->payload, 0x01, 4);
-        err_t err = udp_sendto(pcb, response, addr, port);
-        if (err != ERR_OK) {
-            printf("Failed to send UDP packet! error=%d\n", err);
+    } else if (data[1] == 0x01) {
+        if (memcmp(data + 2, hmac_result, HMAC_SHA1_HASH_SIZE) == 0) {
+            memset(response->payload, 0x01, 4);
+            send_WOL();
         } else {
-            printf("Sent challenge\n");
+            memset(response->payload, 0xff, 4);
+            printf("FAILED!\n");
         }
-        send_WOL();
     } else {
+        memcpy(response->payload, req_char, 4);
     }
     err_t err = udp_sendto(pcb, response, addr, port);
     if (err != ERR_OK) {
         printf("Failed to send UDP packet! error=%d\n", err);
     } else {
-        printf("Sent challenge\n");
+        printf("Sent result\n");
     }
     pbuf_free(response);
     pbuf_free(p);
@@ -205,14 +205,25 @@ int main() {
 
     err_t err;
 
+    init_wol();
     ipaddr_aton(WOL_ADDR, &target_addr);
     err = udp_bind(pcb, IP4_ADDR_ANY, RECV_PORT);
     check_err(err == ERR_OK, "Failed to bind!", NULL);
     udp_recv(pcb, recv_callback, NULL);
 
+    unsigned n = 0;
     while (true) {
+        int cur_time = time_us_32();
+        if (n == 0) {
+            n = 10;
+            printf("updating challenge...\n");
+            memcpy(req_char, &cur_time, 4);
+            hexdump(req_char, 4);
+        } else {
+            n = n - 1;
+        }
         set_status_led(false);
-        printf("sleeping %d\n", time_us_32());
+        printf("sleeping %d\n", cur_time);
         sleep_ms(2950);
         // send_WOL();
         set_status_led(true);

@@ -37,24 +37,43 @@ func main() {
 		log.Fatal(err)
 	}
 
-	h := hmac.New(sha1.New, key)
+	hasher := hmac.New(sha1.New, key)
 	fmt.Printf("Key length: %v\n", len(key))
-	fmt.Printf("Recommended key length: %v\n", h.BlockSize())
-	packet := h.Sum([]byte{0x01, 0x01})
-	fmt.Printf("Sending packet: %x\n", packet)
+	fmt.Printf("Recommended key length: %v\n", hasher.BlockSize())
 	var i = 0
 	for {
-		_, err = h.Write([]byte("request"))
+		time.Sleep(time.Millisecond*50)
+		conn.SetDeadline(time.Now().Add(time.Second * 5))
+
+		var result []byte = make([]byte, 12)
+		fmt.Printf("Sending request\n")
+		_, err = conn.Write([]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 		if err != nil {
 			log.Fatal(err)
 		}
-		conn.SetDeadline(time.Now().Add(time.Second * 2))
+
+		r_len, err := conn.Read(result)
+		if err != nil {
+			log.Printf("Read failed, retrying: i=%v, %v\n", i, err)
+			i++
+			continue
+		} else {
+			log.Printf("Got 0x%x\n", result[:r_len])
+		}
+
+		_, err = hasher.Write(result[:r_len])
+		if err != nil {
+			log.Fatal(err)
+		}
+		packet := hasher.Sum([]byte{0x01, 0x01})
+		hasher.Reset()
+
+		fmt.Printf("Sending solution: %x\n", packet)
 		_, err = conn.Write(packet)
 		log.Println("Sent bytes")
 		if err != nil {
 			log.Fatal(err)
 		}
-		var result []byte = make([]byte, 12)
 		_, err = conn.Read(result)
 		if err != nil {
 			log.Printf("Read failed, retrying: i=%v, %v\n", i, err)
@@ -63,6 +82,5 @@ func main() {
 			log.Println("Got ", result)
 			break
 		}
-		time.Sleep(time.Millisecond*50)
 	}
 }
